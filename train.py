@@ -9,6 +9,7 @@ from torch import optim
 from fastNLP import GradientClipCallback
 from fastNLP import cache_results
 import argparse
+from models.callbacks import EvaluateCallback
 
 
 uniform_init = partial(nn.init.normal_, std=0.02)
@@ -109,6 +110,7 @@ scheduler_callback = SchedulerCallback(scheduler)
 
 callbacks.append(scheduler_callback)
 callbacks.append(GradientClipCallback(clip_type='value', clip_value=5))
+callbacks.append(EvaluateCallback(data.get_dataset('test')))
 
 trainer = Trainer(data.datasets['train'], model, loss=None, metrics=metrics, n_epochs=n_epochs, batch_size=batch_size,
                   print_every=3,

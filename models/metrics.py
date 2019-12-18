@@ -69,9 +69,11 @@ class SegAppCharParseF1Metric(MetricBase):
                     head_word_span = words[head_word_idx]
                     head_dep_tuple.append(((head_word_span, words[idx])))
                     head_label_dep_tuple.append((head_word_span, labels[idx], words[idx]))
-
-            gold_head_dep_tuple = set(gold_word_pairs[b])
-            gold_head_label_dep_tuple = set(gold_label_word_pairs[b])
+            gold_head_dep_tuple = set([(tuple(pair[0]) if not isinstance(pair[0], str) else pair[0],
+                                        tuple(pair[1]) if not isinstance(pair[1], str) else pair[1]) for pair in gold_word_pairs[b]])
+            gold_head_label_dep_tuple = set([(tuple(pair[0]) if not isinstance(pair[0], str) else pair[0],
+                                              pair[1],
+                                              tuple(pair[2]) if not isinstance(pair[2], str) else pair[2]) for pair in gold_label_word_pairs[b]])
 
             for head_dep, head_label_dep in zip(head_dep_tuple, head_label_dep_tuple):
                 if head_dep in gold_head_dep_tuple:
@@ -182,94 +184,3 @@ class ParserMetric(MetricBase):
         self.num_label += label_pred_correct.float().sum().item()
         self.num_sample += seq_mask.sum().item()
 
-
-class ErrorMetric(MetricBase):
-    """
-        计算错误的来源比例
-        (1) 有多少的错误是来源于任一分词出现的错误。
-        (2) 有多少错误是来源于对head的预测不正确。
-
-    """
-
-    def __init__(self, app_index):
-        super().__init__()
-
-        self.app_index = app_index
-
-        self.parse_head_tp = 0
-        self.tol = self.head_wrong = self.seg_wrong = 0
-
-    def evaluate(self, gold_word_pairs, head_preds, label_preds, seq_lens,
-                    seg_masks, char_heads, char_labels):
-        """
-
-        :param seg_masks: batch_size x max_len
-        :param label_preds: batch_size x (max_len+1)
-        :param head_preds: batch_size x (max_len+1)
-        :param seq_lens: batch_size
-        :param char_heads: batch_size x (max_len+1)
-        :param char_labels: batch_size x (max_len+1)
-        :return:
-        """
-        head_preds = head_preds[:, 1:].tolist()
-        label_preds = label_preds[:, 1:].tolist()
-        seq_lens = (seq_lens - 1).tolist()
-
-        # 先解码出words，POS，heads, labels, 对应的character范围
-        for b in range(len(head_preds)):
-            seq_len = seq_lens[b]
-            head_pred = head_preds[b][:seq_len]
-            label_pred = label_preds[b][:seq_len]
-
-            words = [] # 存放[word_start, word_end)，相对起始位置，不考虑root
-            heads = []
-            labels = []
-            ranges = []  # 对应该char是第几个word，长度是seq_len+1
-            word_idx = 0
-            word_start_idx = 0
-            for idx, (label, head) in enumerate(zip(label_pred, head_pred)):
-                ranges.append(word_idx)
-                if label == self.app_index:
-                    pass
-                else:
-                    labels.append(label)
-                    heads.append(head)
-                    words.append((word_start_idx, idx+1))
-                    word_start_idx = idx+1
-                    word_idx += 1
-
-            head_dep_tuple = [] # head在前面
-            for idx, head in enumerate(heads):
-                if head == 0:
-                    head_dep_tuple.append((('root', words[idx])))
-                else:
-                    head_word_idx = ranges[head-1]
-                    head_word_span = words[head_word_idx]
-                    head_dep_tuple.append(((head_word_span, words[idx])))
-
-            gold_head_dep_tuple = set(gold_word_pairs[b])
-            valid_span_set = set([pairs[1] for pairs in gold_word_pairs[b]])
-
-            for head_dep in head_dep_tuple:
-                if head_dep in gold_head_dep_tuple:
-                    self.parse_head_tp += 1
-                else:
-                    head_span = head_dep[0]  # [start_idx, end_index)
-                    dep_span = head_dep[1]  # [start_idx, end_index)
-                    if head_span in valid_span_set and dep_span in valid_span_set:
-                        self.head_wrong += 1
-                    else:
-                        self.seg_wrong += 1
-            self.tol += len(gold_head_dep_tuple)
-
-    def get_metric(self, reset=True):
-        res = {}
-        tol = self.tol + 1e-6
-        res['UAS'] = round(self.parse_head_tp/tol, 4)
-        res['SEG'] = round(self.seg_wrong/tol, 4)
-        res['HEAD'] = round(self.head_wrong/tol, 4)
-
-        if reset:
-            self.parse_head_tp = 0
-            self.tol = self.head_wrong = self.seg_wrong = 0
-        return res

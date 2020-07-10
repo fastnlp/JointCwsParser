@@ -43,6 +43,8 @@ You should place your data like the following structure
     -ctb9
         -...
 ```
+We use code from https://github.com/hankcs/TreebankPreprocessing to convert the original format into the conll format.
+
 
 ### Run the code
 You can directly run by
